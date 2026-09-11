@@ -400,6 +400,8 @@
     document.getElementById("search-label").textContent = "Para onde vamos?";
     document.getElementById("search-sub").textContent = "";
     document.getElementById("status-pod").innerHTML = '<div class="gps-dot ok" id="gps-dot"></div><div class="status-text" id="status-text">GPS ativo</div>';
+    followMode = true;
+    if (marker) map.setView(marker.getLatLng(), Math.max(map.getZoom(), 16), { animate: true });
   }
   document.getElementById("chip-x").addEventListener("click", function(e){ e.stopPropagation(); clearRoute(); });
 
@@ -594,14 +596,16 @@
       var totalKm = baseline.distance / 1000;
 
       var viaPromises = [];
+      var MAX_EXTRA_KM = 15; // limite absoluto de km extra face à rota direta — nunca "inventar" dezenas de km
       if (totalKm >= 1.5){
         var brg = bearingOf(origin, dest);
         var mid = [(origin[0]+dest[0])/2, (origin[1]+dest[1])/2];
-        [0.15, 0.28, 0.42].forEach(function(frac){
+        // desvios pequenos e fixos (não proporcionais à distância total) — mantêm o trajeto reconhecível
+        [1.5, 3, 5].forEach(function(offsetKm){
           [90, -90].forEach(function(side){
-            var via = destPoint(mid, totalKm*frac, brg+side);
+            var via = destPoint(mid, offsetKm, brg+side);
             viaPromises.push(fetchRouteRaw([origin, via, dest]).then(function(r){
-              if (!r || r.distance > baseline.distance*1.9) return null;
+              if (!r || (r.distance - baseline.distance) > MAX_EXTRA_KM*1000) return null;
               var coords = r.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
               return { route: r, coords: coords, curveScore: buildCurveEvents(coords).curveScore };
             }));
@@ -614,9 +618,10 @@
         var best = candidates[0];
         candidates.forEach(function(c){ if (c.curveScore > best.curveScore) best = c; });
         var improved = best !== candidates[0] && best.curveScore > candidates[0].curveScore * 1.05;
+        var extraKm = improved ? ((best.route.distance - baseline.distance)/1000).toFixed(1) : 0;
         var extra = improved
-          ? "Encontrada uma rota mais sinuosa entre " + candidates.length + " trajetos testados."
-          : "Não encontrei um trajeto claramente mais sinuoso nesta zona — a mostrar a rota mais direta.";
+          ? "Rota mais sinuosa encontrada, com mais " + extraKm + " km do que a direta."
+          : "Não encontrei um trajeto claramente mais sinuoso perto daqui — a mostrar a rota mais direta.";
         if (!improved) toast(extra);
         finishRoute(best.coords, { distance: best.route.distance, duration: best.route.duration }, label, fmtDist(best.route.distance) + " · " + fmtDur(best.route.duration), extra);
       });
@@ -803,9 +808,11 @@
 
   /* ---------- GPS ---------- */
   var speedVal = document.getElementById("speed-val");
+  var lastFixAt = 0;
   function onPosition(pos){
     var c = pos.coords, latlng = [c.latitude, c.longitude];
     lastLatLng = latlng;
+    lastFixAt = Date.now();
     ensureMarker(latlng);
     accuracyCircle.setRadius(Math.min(300, Math.max(8, c.accuracy || 15)));
     if (typeof c.heading === "number" && !isNaN(c.heading)) rotateMarker(c.heading);
@@ -821,6 +828,13 @@
     checkRadarProximity(latlng);
     if (followMode) map.setView(latlng, Math.max(map.getZoom(), 16), { animate: true });
   }
+  setInterval(function(){
+    if (!lastFixAt || routeCoords) return;
+    var st = document.getElementById("status-text");
+    if (!st) return;
+    var secs = Math.round((Date.now()-lastFixAt)/1000);
+    if (secs > 8) st.innerHTML = "<b>Sem atualização</b> há " + secs + "s — última posição conhecida";
+  }, 2000);
   var gpsDeniedWarned = false;
   function onPositionError(err){
     var dot = document.getElementById("gps-dot"); if (dot) dot.classList.remove("ok");
@@ -863,37 +877,51 @@
     if (angle === 90) raw = -raw;
     updateLeanGauge(raw);
   }
+  function onMotionContinuous(e){
+    if (!e.accelerationIncludingGravity) return;
+    var g = e.accelerationIncludingGravity;
+    if (g.x === null || g.z === null) return;
+    leanEventReceived = true;
+    updateLeanGauge(toDeg(Math.atan2(g.x||0, g.z||9.8)));
+  }
   function startLean(){
     leanEventReceived = false;
     window.addEventListener("deviceorientation", onOrientation, true);
+    window.addEventListener("devicemotion", onMotionContinuous, true);
     leanActive = true;
     document.getElementById("lean-gauge").classList.add("show");
     document.getElementById("lean-perm").classList.remove("show");
     setTimeout(function(){
       if (settings.leanOn && !leanEventReceived){
-        toast("Sem leitura do sensor. No Chrome Android: toca no cadeado junto ao endereço → Definições do site → Sensores de movimento → Permitir, e recarrega a página.", 9000);
+        toast("Sem leitura de nenhum sensor de movimento. Este telemóvel pode não ter giroscópio/acelerómetro acessível ao browser.", 9000);
       }
     }, 3000);
   }
   function requestLean(){
     if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function"){
       document.getElementById("lean-perm").classList.add("show");
-    } else if (window.DeviceOrientationEvent) {
+    } else if (window.DeviceOrientationEvent || window.DeviceMotionEvent) {
       startLean();
     } else {
-      toast("Este telemóvel/navegador não expõe sensores de orientação.");
+      toast("Este telemóvel/navegador não expõe sensores de movimento.");
     }
   }
   function stopLean(){
     window.removeEventListener("deviceorientation", onOrientation, true);
+    window.removeEventListener("devicemotion", onMotionContinuous, true);
     leanActive = false;
     document.getElementById("lean-gauge").classList.remove("show");
     document.getElementById("lean-perm").classList.remove("show");
   }
   document.getElementById("btn-lean-enable").addEventListener("click", function(){
-    DeviceOrientationEvent.requestPermission().then(function(state){
-      if (state === "granted") startLean(); else toast("Permissão de sensores negada.");
-    }).catch(function(){ toast("Não foi possível pedir permissão do sensor."); });
+    var asks = [];
+    if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") asks.push(DeviceOrientationEvent.requestPermission());
+    if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function") asks.push(DeviceMotionEvent.requestPermission());
+    if (!asks.length){ startLean(); return; }
+    Promise.all(asks).then(function(states){
+      toast("Permissão: " + states.join(", "));
+      if (states.some(function(s){ return s === "granted"; })) startLean();
+    }).catch(function(err){ toast("Erro ao pedir permissão: " + (err && err.message ? err.message : String(err))); });
   });
   document.getElementById("lean-gauge").addEventListener("click", function(){
     calibrateNext = true;
