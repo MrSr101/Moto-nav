@@ -34,7 +34,7 @@
   .search-chip.has-route { color: var(--text); }
   .search-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
   .search-chip small { color: var(--muted); font-weight: 500; }
-  .chip-x { flex: none; width: 36px; height: 36px; border-radius: 50%; background: var(--surface-2); display: none; align-items: center; justify-content: center; font-size: 16px; color: var(--muted); }
+  .chip-x { flex: none; width: 52px; height: 52px; border-radius: 50%; background: var(--danger); display: none; align-items: center; justify-content: center; font-size: 22px; color: #fff; margin: -4px -6px -4px 0; }
   .search-chip.has-route .chip-x { display: flex; }
   .icon-btn { pointer-events: auto; width: 54px; height: 54px; flex: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: blur(10px); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 6px 18px var(--shadow); color: var(--text); }
   .icon-btn svg { width: 24px; height: 24px; }
@@ -131,6 +131,7 @@
   input[type=range]::-moz-range-track { height: 5px; border-radius: 3px; background: var(--line); }
 
   .radar-pin { width: 26px; height: 26px; border-radius: 50%; background: var(--danger); display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 3px 8px rgba(0,0,0,.5); border: 2px solid #fff; }
+  .radar-pin-osm { background: var(--warn); }
 
   .toast { position: absolute; left: 50%; bottom: 110px; transform: translate(-50%, 0); z-index: 50; background: var(--surface); border: 1px solid var(--line); color: var(--text); padding: 10px 16px; border-radius: 12px; font-size: 13px; box-shadow: 0 8px 22px var(--shadow); opacity: 0; transition: opacity .25s ease; pointer-events: none; max-width: 86vw; text-align: center; }
   .toast.show { opacity: 1; }
@@ -194,6 +195,7 @@
     <button class="icon-btn" id="btn-close-search">←</button>
     <div class="search-input-wrap"><input type="text" id="search-input" placeholder="Morada, cidade, ponto de interesse…" autocomplete="off"></div>
   </div>
+  <div class="poi-chips" id="fav-chips" style="display:none;"></div>
   <div class="poi-chips" id="poi-chips">
     <button data-q="hospital">🏥 Hospitais</button>
     <button data-q="farmácia">💊 Farmácias</button>
@@ -210,7 +212,10 @@
 <div class="sheet-scrim" id="route-sheet-scrim"></div>
 <div class="sheet" id="route-sheet">
   <div class="sheet-handle"></div>
-  <h3 id="route-sheet-dest">Destino</h3>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+    <h3 id="route-sheet-dest" style="margin:0;">Destino</h3>
+    <button id="btn-fav-toggle" aria-label="Guardar como favorito" style="flex:none;width:46px;height:46px;border-radius:50%;background:var(--surface-2);border:1px solid var(--line);font-size:20px;color:var(--muted);">☆</button>
+  </div>
   <div class="sheet-options">
     <button class="sheet-opt active" data-mode="fast"><b>Mais rápida</b><span>Rota direta recomendada pelo motor de rotas</span></button>
     <button class="sheet-opt" data-mode="curvy"><b>Mais sinuosa</b><span>Testa vários desvios e escolhe o trajeto com mais curvas</span></button>
@@ -333,7 +338,7 @@
   var map = L.map("map", { zoomControl: false, attributionControl: false, preferCanvas: true }).setView([38.7223, -9.1393], 15);
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, subdomains: "abc", updateWhenZooming: false, keepBuffer: 4, detectRetina: false }).addTo(map);
 
-  var followMode = true;
+  var followMode = true, followResumeTimer = null;
   map.on("dragstart", function(){ followMode = false; });
 
   function bikeSvg(color, size){
@@ -392,10 +397,12 @@
   }
 
   var routeLayers = [], routeCoords = null, routeMeta = null, curveEvents = [], announced = {}, routeInfo = null;
+  var routeSegLayers = [], routePassedIdx = 0;
 
   function clearRoute(){
     routeLayers.forEach(function(l){ map.removeLayer(l); }); routeLayers = [];
     routeCoords = null; routeMeta = null; curveEvents = []; announced = {}; routeInfo = null;
+    routeSegLayers = []; routePassedIdx = 0;
     document.getElementById("search-chip").classList.remove("has-route");
     document.getElementById("search-label").textContent = "Para onde vamos?";
     document.getElementById("search-sub").textContent = "";
@@ -457,6 +464,7 @@
 
   function drawRoute(coords){
     routeLayers.forEach(function(l){ map.removeLayer(l); }); routeLayers = [];
+    routeSegLayers = []; routePassedIdx = 0;
     var latlngs = coords.map(function(c){ return [c[0], c[1]]; });
     var outline = L.polyline(latlngs, { color: "#08110F", weight: 9, opacity: 0.55, lineCap: "round", lineJoin: "round" }).addTo(map);
     routeLayers.push(outline);
@@ -468,9 +476,18 @@
     for (var i=0;i<latlngs.length-1;i++){
       var seg = L.polyline([latlngs[i], latlngs[i+1]], { color: segColor[i], weight: 5.5, opacity: 0.95, lineCap: "round" }).addTo(map);
       routeLayers.push(seg);
+      routeSegLayers.push(seg);
     }
     map.fitBounds(L.polyline(latlngs).getBounds(), { padding: [60,60] });
     followMode = false;
+    clearTimeout(followResumeTimer);
+    followResumeTimer = setTimeout(function(){ followMode = true; }, 3500); // depois de mostrar a rota toda, volta a seguir-te automaticamente
+  }
+  function dimPassedRoute(idx){
+    if (!routeSegLayers.length) return;
+    var target = Math.min(idx, routeSegLayers.length);
+    for (var i=routePassedIdx; i<target; i++) routeSegLayers[i].setStyle({ opacity: 0.22 });
+    routePassedIdx = Math.max(routePassedIdx, target);
   }
 
   function speak(text){
@@ -555,10 +572,26 @@
       var ahead = ev.distAlong - distAlongNow;
       if (ahead>0 && ahead<120){ announced[i]=true; speak(curvePhrase(ev)); }
     });
+    dimPassedRoute(idx);
     updateRouteHud(distAlongNow);
   }
 
-  function finishRoute(coords, info, label, sub, spokenExtra){
+  function estimateToll(route){
+    if (!route || !route.legs) return null;
+    var FREE = /\bA\s?(4|13|13-1|22|23|24|25|28)\b/i; // ex-SCUT, hoje gratuitas (aproximação)
+    var TOLL_ROAD = /\bA\s?\d{1,2}\b/i; // refs tipo "A1", "A2"...
+    var tolledKm = 0, hasAny = false;
+    route.legs.forEach(function(leg){
+      (leg.steps||[]).forEach(function(step){
+        var name = step.name || "";
+        if (TOLL_ROAD.test(name) && !FREE.test(name)){ tolledKm += (step.distance||0)/1000; hasAny = true; }
+      });
+    });
+    var RATE = 0.09; // €/km aproximado (Classe 1 — inclui motas), média Brisa 2026
+    return { amount: hasAny ? tolledKm*RATE : 0, km: tolledKm };
+  }
+
+  function finishRoute(coords, info, label, sub, spokenExtra, tollInfo){
     routeInfo = info;
     routeCoords = coords;
     routeMeta = buildCurveEvents(routeCoords);
@@ -566,13 +599,17 @@
     drawRoute(routeCoords);
     document.getElementById("search-chip").classList.add("has-route");
     document.getElementById("search-label").textContent = label;
-    document.getElementById("search-sub").textContent = sub;
+    var tollTxt = "";
+    if (tollInfo && tollInfo.amount > 0) tollTxt = " · ~€" + tollInfo.amount.toFixed(2) + " portagem";
+    else if (tollInfo) tollTxt = " · sem portagens";
+    document.getElementById("search-sub").textContent = sub + tollTxt;
     if (lastLatLng) updateRouteHud(routeMeta.cum[findNearestIndex(lastLatLng)]);
-    speak((spokenExtra ? spokenExtra + " " : "") + "Rota calculada. " + fmtDist(info.distance) + ", tempo estimado " + fmtDur(info.duration) + ".");
+    var tollSpoken = tollInfo && tollInfo.amount > 0 ? (" Portagem estimada de cerca de " + tollInfo.amount.toFixed(2).replace(".", " vírgula ") + " euros.") : "";
+    speak((spokenExtra ? spokenExtra + " " : "") + "Rota calculada. " + fmtDist(info.distance) + ", tempo estimado " + fmtDur(info.duration) + "." + tollSpoken);
   }
 
   function fetchRouteRaw(coordsList){
-    var url = "https://router.project-osrm.org/route/v1/driving/" + coordsList.map(function(p){ return p[1] + "," + p[0]; }).join(";") + "?overview=full&geometries=geojson&steps=false";
+    var url = "https://router.project-osrm.org/route/v1/driving/" + coordsList.map(function(p){ return p[1] + "," + p[0]; }).join(";") + "?overview=full&geometries=geojson&steps=true";
     return fetch(url).then(function(r){ return r.json(); }).then(function(data){
       return (data.routes && data.routes.length) ? data.routes[0] : null;
     }).catch(function(){ return null; });
@@ -584,7 +621,7 @@
       fetchRouteRaw([origin, dest]).then(function(r){
         if (!r){ toast("Não foi possível calcular a rota."); clearRoute(); return; }
         var coords = r.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
-        finishRoute(coords, { distance: r.distance, duration: r.duration }, label, fmtDist(r.distance) + " · " + fmtDur(r.duration), "");
+        finishRoute(coords, { distance: r.distance, duration: r.duration }, label, fmtDist(r.distance) + " · " + fmtDur(r.duration), "", estimateToll(r));
       }).catch(function(){ toast("Erro ao calcular a rota. Verifica a ligação à internet."); document.getElementById("search-label").textContent = "Para onde vamos?"; });
       return;
     }
@@ -623,7 +660,7 @@
           ? "Rota mais sinuosa encontrada, com mais " + extraKm + " km do que a direta."
           : "Não encontrei um trajeto claramente mais sinuoso perto daqui — a mostrar a rota mais direta.";
         if (!improved) toast(extra);
-        finishRoute(best.coords, { distance: best.route.distance, duration: best.route.duration }, label, fmtDist(best.route.distance) + " · " + fmtDur(best.route.duration), extra);
+        finishRoute(best.coords, { distance: best.route.distance, duration: best.route.duration }, label, fmtDist(best.route.distance) + " · " + fmtDur(best.route.duration), extra, estimateToll(best.route));
       });
     }).catch(function(){ toast("Erro ao calcular a rota. Verifica a ligação à internet."); document.getElementById("search-label").textContent = "Para onde vamos?"; });
   }
@@ -631,13 +668,13 @@
   function computeLoop(origin, radiusKm){
     var pts = [origin, destPoint(origin, radiusKm*0.5, 30), destPoint(origin, radiusKm*0.5, 150), destPoint(origin, radiusKm*0.5, 270)];
     var coordStr = pts.map(function(p){ return p[1] + "," + p[0]; }).join(";");
-    var url = "https://router.project-osrm.org/trip/v1/driving/" + coordStr + "?source=first&roundtrip=true&overview=full&geometries=geojson";
+    var url = "https://router.project-osrm.org/trip/v1/driving/" + coordStr + "?source=first&roundtrip=true&overview=full&geometries=geojson&steps=true";
     document.getElementById("search-label").textContent = "A gerar percurso…";
     fetch(url).then(function(r){ return r.json(); }).then(function(data){
       if (!data.trips || !data.trips.length){ toast("Não foi possível gerar o percurso circular."); clearRoute(); return; }
       var trip = data.trips[0];
       var coords = trip.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
-      finishRoute(coords, { distance: trip.distance, duration: trip.duration }, "Percurso circular", fmtDist(trip.distance) + " · " + fmtDur(trip.duration), "Percurso circular gerado.");
+      finishRoute(coords, { distance: trip.distance, duration: trip.duration }, "Percurso circular", fmtDist(trip.distance) + " · " + fmtDur(trip.duration), "Percurso circular gerado.", estimateToll(trip));
     }).catch(function(){ toast("Erro ao gerar o percurso. Verifica a ligação à internet."); document.getElementById("search-label").textContent = "Para onde vamos?"; });
   }
 
@@ -665,6 +702,52 @@
   document.getElementById("btn-close-search").addEventListener("click", closeSearch);
 
   var pendingDest = null;
+
+  /* ---------- Favoritos (sítios frequentes) ---------- */
+  var FAV_KEY = "motonav_favorites_v1";
+  var favorites = JSON.parse(localStorage.getItem(FAV_KEY) || "[]"); // [{id,name,lat,lon}]
+  function saveFavorites(){ localStorage.setItem(FAV_KEY, JSON.stringify(favorites)); }
+  function findFavoriteFor(dest){
+    if (!dest) return null;
+    return favorites.find(function(f){ return Math.abs(f.lat-dest.latlng[0])<0.0005 && Math.abs(f.lon-dest.latlng[1])<0.0005; });
+  }
+  function renderFavChips(){
+    var el = document.getElementById("fav-chips");
+    if (!favorites.length){ el.style.display = "none"; el.innerHTML = ""; return; }
+    el.style.display = "flex";
+    el.innerHTML = "";
+    favorites.forEach(function(f){
+      var b = document.createElement("button");
+      b.textContent = "★ " + f.name;
+      b.addEventListener("click", function(){
+        closeSearch();
+        pendingDest = { latlng: [f.lat, f.lon], label: f.name };
+        document.getElementById("route-sheet-dest").textContent = f.name;
+        openRouteSheet();
+      });
+      el.appendChild(b);
+    });
+  }
+  function updateFavToggleBtn(){
+    var btn = document.getElementById("btn-fav-toggle");
+    var fav = findFavoriteFor(pendingDest);
+    btn.textContent = fav ? "★" : "☆";
+    btn.style.color = fav ? "var(--warn)" : "var(--muted)";
+  }
+  document.getElementById("btn-fav-toggle").addEventListener("click", function(){
+    if (!pendingDest) return;
+    var existing = findFavoriteFor(pendingDest);
+    if (existing){
+      favorites = favorites.filter(function(f){ return f.id !== existing.id; });
+      toast("Removido dos favoritos.");
+    } else {
+      var name = window.prompt("Nome para este favorito:", pendingDest.label || "Local") || pendingDest.label || "Local";
+      favorites.push({ id: "f"+Date.now(), name: name, lat: pendingDest.latlng[0], lon: pendingDest.latlng[1] });
+      toast("Guardado nos favoritos.");
+    }
+    saveFavorites(); renderFavChips(); updateFavToggleBtn();
+  });
+  renderFavChips();
   var searchDebounce = null;
   var resultsEl = document.getElementById("search-results");
 
@@ -724,7 +807,7 @@
   /* ---------- Route type sheet ---------- */
   var routeSheet = document.getElementById("route-sheet"), routeSheetScrim = document.getElementById("route-sheet-scrim");
   var chosenMode = "fast";
-  function openRouteSheet(){ closeAllPanels(); routeSheet.classList.add("open"); routeSheetScrim.classList.add("open"); }
+  function openRouteSheet(){ closeAllPanels(); routeSheet.classList.add("open"); routeSheetScrim.classList.add("open"); updateFavToggleBtn(); }
   function closeRouteSheet(){ routeSheet.classList.remove("open"); routeSheetScrim.classList.remove("open"); }
   routeSheetScrim.addEventListener("click", closeRouteSheet);
   document.querySelectorAll("#route-sheet .sheet-opt").forEach(function(btn){
@@ -765,25 +848,58 @@
 
   /* ---------- Radars ---------- */
   var RADAR_KEY = "motonav_radars_v1";
-  var radars = JSON.parse(localStorage.getItem(RADAR_KEY) || "[]");
-  var radarMarkers = {}, radarWarned = {};
+  var radars = JSON.parse(localStorage.getItem(RADAR_KEY) || "[]"); // radares adicionados manualmente
+  var osmRadars = []; // radares carregados do OpenStreetMap (comunidade)
+  var radarMarkers = {}, osmRadarMarkers = {}, radarWarned = {};
   function saveRadars(){ localStorage.setItem(RADAR_KEY, JSON.stringify(radars)); }
-  function radarIcon(){ return L.divIcon({ className: "", html: '<div class="radar-pin">📷</div>', iconSize: [26,26], iconAnchor: [13,13] }); }
+  function radarIcon(osm){ return L.divIcon({ className: "", html: '<div class="radar-pin' + (osm?' radar-pin-osm':'') + '">📷</div>', iconSize: [26,26], iconAnchor: [13,13] }); }
   function renderRadars(){
     Object.keys(radarMarkers).forEach(function(id){ map.removeLayer(radarMarkers[id]); }); radarMarkers = {};
     radars.forEach(function(r){
-      var m = L.marker([r.lat, r.lon], { icon: radarIcon() }).addTo(map);
+      var m = L.marker([r.lat, r.lon], { icon: radarIcon(false) }).addTo(map);
       m.on("click", function(){ if (window.confirm("Remover este radar?")){ radars = radars.filter(function(x){ return x.id !== r.id; }); saveRadars(); renderRadars(); } });
       radarMarkers[r.id] = m;
     });
   }
+  function renderOsmRadars(){
+    Object.keys(osmRadarMarkers).forEach(function(id){ map.removeLayer(osmRadarMarkers[id]); }); osmRadarMarkers = {};
+    osmRadars.forEach(function(r){
+      var m = L.marker([r.lat, r.lon], { icon: radarIcon(true) }).addTo(map);
+      m.bindPopup("Radar (OpenStreetMap)" + (r.maxspeed ? " · limite " + r.maxspeed + " km/h" : ""));
+      osmRadarMarkers[r.id] = m;
+    });
+  }
   map.on("contextmenu", function(e){
     if (window.confirm("Adicionar um radar aqui?")){
-      radars.push({ id: Date.now(), lat: e.latlng.lat, lon: e.latlng.lng });
+      radars.push({ id: "u"+Date.now(), lat: e.latlng.lat, lon: e.latlng.lng });
       saveRadars(); renderRadars();
     }
   });
   renderRadars();
+  fetchOsmRadars(map.getBounds());
+
+  var osmRadarFetchToken = 0;
+  function fetchOsmRadars(bounds){
+    var myToken = ++osmRadarFetchToken;
+    var bbox = bounds.getSouth() + "," + bounds.getWest() + "," + bounds.getNorth() + "," + bounds.getEast();
+    var q = "[out:json][timeout:20];node[\"highway\"=\"speed_camera\"](" + bbox + ");out body;";
+    fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: "data=" + encodeURIComponent(q) })
+      .then(function(r){ return r.json(); })
+      .then(function(data){
+        if (myToken !== osmRadarFetchToken) return; // resposta antiga, ignorar
+        var fresh = (data.elements||[]).map(function(el){ return { id: "osm"+el.id, lat: el.lat, lon: el.lon, maxspeed: el.tags && el.tags.maxspeed }; });
+        var known = {}; osmRadars.forEach(function(r){ known[r.id]=r; });
+        fresh.forEach(function(r){ known[r.id]=r; });
+        osmRadars = Object.values(known);
+        renderOsmRadars();
+      }).catch(function(){ /* Overpass falhou/sem rede — mantém o que já tinha */ });
+  }
+  var osmRadarDebounce = null;
+  map.on("moveend", function(){
+    if (map.getZoom() < 11) return; // evita pedir uma área gigante
+    clearTimeout(osmRadarDebounce);
+    osmRadarDebounce = setTimeout(function(){ fetchOsmRadars(map.getBounds()); }, 900);
+  });
 
   /* ---------- Tap on map: closes any open panel, otherwise routes to that point ---------- */
   map.on("click", function(e){
@@ -799,7 +915,7 @@
     }).catch(function(){ pendingDest.label = "Ponto no mapa"; document.getElementById("route-sheet-dest").textContent = "Ponto no mapa"; });
   });
   function checkRadarProximity(latlng){
-    radars.forEach(function(r){
+    radars.concat(osmRadars).forEach(function(r){
       var d = haversine(latlng, [r.lat, r.lon]);
       if (d < 350){ if (!radarWarned[r.id]){ radarWarned[r.id] = true; speak("Atenção, radar de velocidade próximo."); toast("📷 Radar próximo"); } }
       else if (d > 700){ radarWarned[r.id] = false; }
@@ -826,7 +942,7 @@
       checkCurveAnnouncements(latlng);
     }
     checkRadarProximity(latlng);
-    if (followMode) map.setView(latlng, Math.max(map.getZoom(), 16), { animate: true });
+    if (followMode) map.setView(latlng, Math.max(map.getZoom(), routeCoords ? 17.5 : 16), { animate: true });
   }
   setInterval(function(){
     if (!lastFixAt || routeCoords) return;
@@ -871,21 +987,30 @@
   }
   var leanEventReceived = false;
   function onOrientation(e){
+    // reserva: só usado se o acelerómetro (devicemotion) não estiver disponível
+    if (leanUsingMotion) return;
     leanEventReceived = true;
     var angle = (screen.orientation && typeof screen.orientation.angle === "number") ? screen.orientation.angle : (window.orientation||0);
     var raw = (Math.abs(angle) === 90) ? (e.beta||0) : (e.gamma||0);
     if (angle === 90) raw = -raw;
     updateLeanGauge(raw);
   }
+  var leanUsingMotion = false;
   function onMotionContinuous(e){
     if (!e.accelerationIncludingGravity) return;
     var g = e.accelerationIncludingGravity;
-    if (g.x === null || g.z === null) return;
-    leanEventReceived = true;
-    updateLeanGauge(toDeg(Math.atan2(g.x||0, g.z||9.8)));
+    if (g.x === null || g.y === null || g.z === null) return;
+    leanEventReceived = true; leanUsingMotion = true;
+    // usa o vetor da gravidade (imune ao "gimbal lock" que o beta/gamma sofre em vertical/horizontal)
+    // e compensa consoante a orientação do ecrã, para dar o mesmo ângulo em vertical ou horizontal
+    var angle = (screen.orientation && typeof screen.orientation.angle === "number") ? screen.orientation.angle : (window.orientation||0);
+    var raw;
+    if (Math.abs(angle) === 90){ raw = toDeg(Math.atan2(g.y, g.z)); if (angle === -90 || angle === 270) raw = -raw; }
+    else { raw = toDeg(Math.atan2(g.x, g.z)); if (angle === 180) raw = -raw; }
+    updateLeanGauge(raw);
   }
   function startLean(){
-    leanEventReceived = false;
+    leanEventReceived = false; leanUsingMotion = false;
     window.addEventListener("deviceorientation", onOrientation, true);
     window.addEventListener("devicemotion", onMotionContinuous, true);
     leanActive = true;
