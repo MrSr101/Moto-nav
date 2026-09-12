@@ -61,15 +61,16 @@
     .topbar { padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: 6px; gap: 8px; }
     .icon-btn { width: 46px; height: 46px; }
     .icon-btn svg { width: 20px; height: 20px; }
-    .chip-x { width: 44px; height: 44px; font-size: 18px; }
+    .chip-x { width: 56px; height: 56px; font-size: 24px; }
     .search-chip { padding: 9px 14px; font-size: 14px; }
     .hud-bottom { padding: 8px 12px max(10px, env(safe-area-inset-bottom)) 12px; gap: 8px; }
     .speed-pod { padding: 8px 14px; min-width: 72px; }
     .speed-pod .val { font-size: 22px; }
     .status-pod { padding: 8px 14px; }
     .route-metric .n { font-size: 16px; }
-    .recenter, .plan-btn { width: 46px; height: 46px; bottom: 78px; }
-    .plan-btn { left: auto; right: 14px; bottom: 132px; } /* empilha por cima do recentrar, à direita — liberta a esquerda para o inclinómetro */
+    .recenter { width: 58px; height: 58px; bottom: 78px; }
+    .recenter svg { width: 24px; height: 24px; }
+    .plan-btn { width: 46px; height: 46px; bottom: 78px; left: auto; right: 14px; bottom: 144px; } /* empilha por cima do recentrar, à direita — liberta a esquerda para o inclinómetro */
     .lean-gauge { top: 64px; width: 76px; padding: 7px; }
     .lean-gauge .deg { font-size: 17px; }
     .lean-gauge .lbl { font-size: 8px; }
@@ -891,7 +892,9 @@
   }
   map.on("contextmenu", function(e){
     if (window.confirm("Adicionar um radar aqui?")){
-      radars.push({ id: "u"+Date.now(), lat: e.latlng.lat, lon: e.latlng.lng });
+      var sp = window.prompt("Limite de velocidade aqui, em km/h (deixa em branco se não souberes):", "");
+      var maxspeed = sp && /^\d+$/.test(sp.trim()) ? sp.trim() : null;
+      radars.push({ id: "u"+Date.now(), lat: e.latlng.lat, lon: e.latlng.lng, maxspeed: maxspeed });
       saveRadars(); renderRadars();
     }
   });
@@ -937,8 +940,14 @@
   function checkRadarProximity(latlng){
     radars.concat(osmRadars).forEach(function(r){
       var d = haversine(latlng, [r.lat, r.lon]);
-      if (d < 350){ if (!radarWarned[r.id]){ radarWarned[r.id] = true; speak("Atenção, radar de velocidade próximo."); toast("📷 Radar próximo"); } }
-      else if (d > 700){ radarWarned[r.id] = false; }
+      if (d < 200){
+        if (!radarWarned[r.id]){
+          radarWarned[r.id] = true;
+          var speedTxt = r.maxspeed ? (", limite de " + r.maxspeed + " quilómetros por hora") : "";
+          speak("Atenção, radar de velocidade a 200 metros" + speedTxt + ".");
+          toast("📷 Radar a 200m" + (r.maxspeed ? " · limite " + r.maxspeed + " km/h" : ""));
+        }
+      } else if (d > 500){ radarWarned[r.id] = false; }
     });
   }
 
