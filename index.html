@@ -115,6 +115,10 @@
   .curve-legend div { flex: 1; }
   .curve-legend-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
   .btn-secondary { width: 100%; padding: 16px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line); color: var(--text); font-family: inherit; font-size: 15px; font-weight: 600; text-align: left; display: flex; align-items: center; gap: 10px; min-height: 52px; }
+  .fav-list-item { display: flex; align-items: center; gap: 10px; padding: 12px 2px; border-bottom: 1px solid var(--line); }
+  .fav-list-item span.nm { flex: 1; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fav-list-item button.del { flex: none; width: 38px; height: 38px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); color: var(--danger); font-size: 16px; }
+  .fav-list-empty { font-size: 13px; color: var(--muted); padding: 6px 2px; }
 
   .search-overlay { position: fixed; inset: 0; z-index: 40; background: var(--bg); transform: translateY(100%); transition: transform .25s ease; display: flex; flex-direction: column; }
   .search-overlay.open { transform: translateY(0); }
@@ -336,6 +340,11 @@
     <label class="field-label">Tamanho do marcador</label>
     <div class="size-preview" id="pin-size-preview"></div>
     <input type="range" id="pin-size" min="26" max="64" value="40">
+  </div>
+
+  <div class="field-group">
+    <label class="field-label">Favoritos</label>
+    <div id="fav-list"></div>
   </div>
 
   <div class="field-group">
@@ -901,6 +910,33 @@
       favMarkers[f.id] = m;
     });
   }
+  function renderFavList(){
+    var el = document.getElementById("fav-list");
+    if (!favorites.length){ el.innerHTML = '<div class="fav-list-empty">Ainda não guardaste nenhum favorito. Toca num local no mapa ou pesquisa um, depois toca em "☆ Favorito".</div>'; return; }
+    el.innerHTML = "";
+    favorites.forEach(function(f){
+      var row = document.createElement("div");
+      row.className = "fav-list-item";
+      row.innerHTML = '<span class="nm">★ ' + f.name + '</span>';
+      var goBtn = document.createElement("button");
+      goBtn.className = "del"; goBtn.style.color = "var(--accent)"; goBtn.textContent = "➤";
+      goBtn.addEventListener("click", function(){
+        closeDrawer();
+        pendingDest = { latlng: [f.lat, f.lon], label: f.name };
+        document.getElementById("route-sheet-dest").textContent = f.name;
+        openRouteSheet();
+      });
+      var delBtn = document.createElement("button");
+      delBtn.className = "del"; delBtn.textContent = "✕";
+      delBtn.addEventListener("click", function(){
+        if (!window.confirm("Remover \"" + f.name + "\" dos favoritos?")) return;
+        favorites = favorites.filter(function(x){ return x.id !== f.id; });
+        saveFavorites(); renderFavChips(); renderFavMarkers(); renderFavList(); updateFavToggleBtn();
+      });
+      row.appendChild(goBtn); row.appendChild(delBtn);
+      el.appendChild(row);
+    });
+  }
   function updateFavToggleBtn(){
     var btn = document.getElementById("btn-fav-toggle");
     var fav = findFavoriteFor(pendingDest);
@@ -918,10 +954,11 @@
       favorites.push({ id: "f"+Date.now(), name: name, lat: pendingDest.latlng[0], lon: pendingDest.latlng[1] });
       toast("Guardado nos favoritos.");
     }
-    saveFavorites(); renderFavChips(); renderFavMarkers(); updateFavToggleBtn();
+    saveFavorites(); renderFavChips(); renderFavMarkers(); renderFavList(); updateFavToggleBtn();
   });
   renderFavChips();
   renderFavMarkers();
+  renderFavList();
   var searchDebounce = null;
   var resultsEl = document.getElementById("search-results");
 
