@@ -159,6 +159,7 @@
 
   .radar-pin { width: 17px; height: 17px; border-radius: 6px; background: color-mix(in srgb, var(--danger) 78%, transparent); display: flex; align-items: center; justify-content: center; font-size: 9px; box-shadow: 0 1px 4px rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,0.5); opacity: 0.85; }
   .radar-pin-osm { background: color-mix(in srgb, var(--warn) 78%, transparent); }
+  .fav-pin { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 20px; color: var(--warn); text-shadow: 0 2px 4px rgba(0,0,0,.6); filter: drop-shadow(0 2px 3px rgba(0,0,0,.4)); }
 
   .toast { position: absolute; left: 50%; bottom: 110px; transform: translate(-50%, 0); z-index: 50; background: var(--surface); border: 1px solid var(--line); color: var(--text); padding: 10px 16px; border-radius: 12px; font-size: 13px; box-shadow: 0 8px 22px var(--shadow); opacity: 0; transition: opacity .25s ease; pointer-events: none; max-width: 86vw; text-align: center; }
   .toast.show { opacity: 1; }
@@ -241,11 +242,14 @@
   <div class="sheet-handle"></div>
   <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
     <h3 id="route-sheet-dest" style="margin:0;">Destino</h3>
-    <button id="btn-fav-toggle" aria-label="Guardar como favorito" style="flex:none;width:46px;height:46px;border-radius:50%;background:var(--surface-2);border:1px solid var(--line);font-size:20px;color:var(--muted);">☆</button>
+    <button id="btn-fav-toggle" aria-label="Guardar como favorito" style="flex:none;display:flex;align-items:center;gap:6px;height:40px;padding:0 14px;border-radius:20px;background:var(--surface-2);border:1px solid var(--line);font-size:16px;color:var(--muted);font-family:inherit;">
+      <span id="btn-fav-star">☆</span><span style="font-size:12px;">Favorito</span>
+    </button>
   </div>
   <div class="sheet-options">
     <button class="sheet-opt active" data-mode="fast"><b>Mais rápida</b><span>Rota direta recomendada pelo motor de rotas</span></button>
-    <button class="sheet-opt" data-mode="curvy"><b>Mais sinuosa</b><span>Testa vários desvios e escolhe o trajeto com mais curvas</span></button>
+    <button class="sheet-opt" data-mode="curvy_tight"><b>Sinuosa, sem desvios</b><span>Prefere ruas com mais curvas que já estão a caminho, sem te levar a explorar longe</span></button>
+    <button class="sheet-opt" data-mode="curvy"><b>Mais sinuosa (explorar)</b><span>Testa desvios maiores e escolhe o trajeto com mais curvas, mesmo que ande mais</span></button>
   </div>
   <div class="sheet-row">
     <span>Superfície</span>
@@ -255,7 +259,7 @@
     <span>Portagens</span>
     <div class="seg mini" id="toll-seg"><button data-v="with">Com</button><button data-v="without">Sem</button></div>
   </div>
-  <div class="note" id="surface-note">O motor de rotas gratuito (OSRM/OpenStreetMap) não indica o tipo de piso nem valores de portagem — estas preferências ficam guardadas, mas a rota calculada pode incluir troços de terra ou vias com portagem sem aviso. Para um filtro real, é preciso um motor pago (ex. GraphHopper) — diz-me se queres que troque para esse.</div>
+  <div class="note" id="surface-note">Com "Sem portagens", tento mesmo evitar as autoestradas pagas (desviando por outras vias) — só uso a rota com portagem se o desvio for demasiado grande. A superfície (alcatroado/terra) continua sem filtro real — o motor gratuito não indica o tipo de piso.</div>
   <button class="btn-primary" id="btn-confirm-route">Calcular rota</button>
 </div>
 
@@ -711,24 +715,73 @@
     rerouting = false; offRouteStrikes = 0;
   }
 
-  function fetchRouteRaw(coordsList){
-    var url = "https://router.project-osrm.org/route/v1/driving/" + coordsList.map(function(p){ return p[1] + "," + p[0]; }).join(";") + "?overview=full&geometries=geojson&steps=true";
+  function fetchRouteRaw(coordsList, extraParams){
+    var url = "https://router.project-osrm.org/route/v1/driving/" + coordsList.map(function(p){ return p[1] + "," + p[0]; }).join(";") + "?overview=full&geometries=geojson&steps=true" + (extraParams || "");
     return fetch(url).then(function(r){ return r.json(); }).then(function(data){
       return (data.routes && data.routes.length) ? data.routes[0] : null;
     }).catch(function(){ return null; });
   }
 
+  function findTollFreeRoute(origin, dest, baseline){
+    // 1ª tentativa: pedir diretamente à OSRM para excluir autoestradas (mais fiável quando o servidor suporta)
+    return fetchRouteRaw([origin, dest], "&exclude=motorway").then(function(excl){
+      if (excl){
+        var exclToll = estimateToll(excl);
+        if (exclToll.km < 0.3) return { route: excl, toll: exclToll };
+      }
+      // 2ª tentativa: desvios manuais, sem limite de distância — "sem portagens" tem de ser mesmo sem
+      var brg = bearingOf(origin, dest);
+      var mid = [(origin[0]+dest[0])/2, (origin[1]+dest[1])/2];
+      var offsets = [4, 8, 14, 24, 40]; // km
+      var promises = [];
+      offsets.forEach(function(offsetKm){
+        [90,-90].forEach(function(side){
+          var via = destPoint(mid, offsetKm, brg+side);
+          promises.push(fetchRouteRaw([origin, via, dest]).then(function(r){
+            if (!r) return null;
+            return { route: r, toll: estimateToll(r) };
+          }));
+        });
+      });
+      if (excl) promises.push(Promise.resolve({ route: excl, toll: estimateToll(excl) }));
+      return Promise.all(promises).then(function(results){
+        var valid = results.filter(function(x){ return x; });
+        if (!valid.length) return null;
+        var best = valid[0];
+        valid.forEach(function(c){ if (c.toll.km < best.toll.km) best = c; });
+        return best;
+      });
+    });
+  }
+
   function computeRoute(origin, dest, label, mode){
     document.getElementById("search-label").textContent = "A calcular rota…";
-    if (mode !== "curvy"){
+    if (mode !== "curvy" && mode !== "curvy_tight"){
       fetchRouteRaw([origin, dest]).then(function(r){
         if (!r){ toast("Não foi possível calcular a rota."); clearRoute(); return; }
+        var tollInfo = estimateToll(r);
+        if (settings.tollPref === "without" && tollInfo && tollInfo.amount > 0){
+          toast("A tentar evitar portagens…", 4500);
+          findTollFreeRoute(origin, dest, r).then(function(alt){
+            var chosen = r, chosenToll = tollInfo, extra = "";
+            if (alt && alt.toll.km < tollInfo.km - 0.05){
+              chosen = alt.route; chosenToll = alt.toll;
+              extra = chosenToll.amount > 0 ? "Reduzi a portagem ao máximo que consegui." : "Rota sem portagens encontrada.";
+            } else {
+              extra = "Não consegui evitar esta portagem sem um desvio grande demais — mantive a rota direta.";
+            }
+            var coords = chosen.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
+            finishRoute(coords, { distance: chosen.distance, duration: chosen.duration }, label, fmtDist(chosen.distance) + " · " + fmtDur(chosen.duration), extra, chosenToll, chosen);
+          });
+          return;
+        }
         var coords = r.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
-        finishRoute(coords, { distance: r.distance, duration: r.duration }, label, fmtDist(r.distance) + " · " + fmtDur(r.duration), "", estimateToll(r), r);
+        finishRoute(coords, { distance: r.distance, duration: r.duration }, label, fmtDist(r.distance) + " · " + fmtDur(r.duration), "", tollInfo, r);
       }).catch(function(){ toast("Erro ao calcular a rota. Verifica a ligação à internet."); document.getElementById("search-label").textContent = "Para onde vamos?"; });
       return;
     }
-    toast("A explorar percursos mais sinuosos…", 6000);
+    var tight = mode === "curvy_tight";
+    toast(tight ? "A procurar curvas a caminho, sem desvios…" : "A explorar percursos mais sinuosos…", 6000);
     fetchRouteRaw([origin, dest]).then(function(baseline){
       if (!baseline){ toast("Não foi possível calcular a rota."); clearRoute(); return; }
       var baseCoords = baseline.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
@@ -736,12 +789,14 @@
       var totalKm = baseline.distance / 1000;
 
       var viaPromises = [];
-      var MAX_EXTRA_KM = 15; // limite absoluto de km extra face à rota direta — nunca "inventar" dezenas de km
+      // "sem desvios": ofertas mínimas, cap curto — só troca de rua se for mesmo ao lado do caminho direto
+      // "explorar": ofertas maiores, cap mais folgado — pode ir mais longe atrás de curvas
+      var offsets = tight ? [0.8, 1.6] : [1.5, 3, 5];
+      var MAX_EXTRA_KM = tight ? 3 : 15;
       if (totalKm >= 1.5){
         var brg = bearingOf(origin, dest);
         var mid = [(origin[0]+dest[0])/2, (origin[1]+dest[1])/2];
-        // desvios pequenos e fixos (não proporcionais à distância total) — mantêm o trajeto reconhecível
-        [1.5, 3, 5].forEach(function(offsetKm){
+        offsets.forEach(function(offsetKm){
           [90, -90].forEach(function(side){
             var via = destPoint(mid, offsetKm, brg+side);
             viaPromises.push(fetchRouteRaw([origin, via, dest]).then(function(r){
@@ -831,10 +886,25 @@
       el.appendChild(b);
     });
   }
+  var favMarkers = {};
+  function favIcon(){ return L.divIcon({ className: "", html: '<div class="fav-pin">★</div>', iconSize: [30,30], iconAnchor: [15,28] }); }
+  function renderFavMarkers(){
+    Object.keys(favMarkers).forEach(function(id){ map.removeLayer(favMarkers[id]); }); favMarkers = {};
+    favorites.forEach(function(f){
+      var m = L.marker([f.lat, f.lon], { icon: favIcon() }).addTo(map);
+      m.bindTooltip(f.name, { direction: "top", offset: [0,-26] });
+      m.on("click", function(){
+        pendingDest = { latlng: [f.lat, f.lon], label: f.name };
+        document.getElementById("route-sheet-dest").textContent = f.name;
+        openRouteSheet();
+      });
+      favMarkers[f.id] = m;
+    });
+  }
   function updateFavToggleBtn(){
     var btn = document.getElementById("btn-fav-toggle");
     var fav = findFavoriteFor(pendingDest);
-    btn.textContent = fav ? "★" : "☆";
+    document.getElementById("btn-fav-star").textContent = fav ? "★" : "☆";
     btn.style.color = fav ? "var(--warn)" : "var(--muted)";
   }
   document.getElementById("btn-fav-toggle").addEventListener("click", function(){
@@ -848,9 +918,10 @@
       favorites.push({ id: "f"+Date.now(), name: name, lat: pendingDest.latlng[0], lon: pendingDest.latlng[1] });
       toast("Guardado nos favoritos.");
     }
-    saveFavorites(); renderFavChips(); updateFavToggleBtn();
+    saveFavorites(); renderFavChips(); renderFavMarkers(); updateFavToggleBtn();
   });
   renderFavChips();
+  renderFavMarkers();
   var searchDebounce = null;
   var resultsEl = document.getElementById("search-results");
 
@@ -874,7 +945,7 @@
 
   function searchFreeText(q){
     var c = map.getCenter();
-    var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&q=" + encodeURIComponent(q) + "&limit=7&addressdetails=1&lat=" + c.lat + "&lon=" + c.lng;
+    var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&q=" + encodeURIComponent(q) + "&limit=10&addressdetails=1&countrycodes=pt&lat=" + c.lat + "&lon=" + c.lng;
     return fetch(url).then(function(r){ return r.json(); });
   }
 
@@ -913,7 +984,7 @@
   function searchNearbyCategory(q){
     var c = map.getCenter(), d = 0.18;
     var viewbox = (c.lng-d) + "," + (c.lat+d) + "," + (c.lng+d) + "," + (c.lat-d);
-    var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&q=" + encodeURIComponent(q) + "&limit=12&addressdetails=1&bounded=1&viewbox=" + viewbox;
+    var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&q=" + encodeURIComponent(q) + "&limit=12&addressdetails=1&countrycodes=pt&bounded=1&viewbox=" + viewbox;
     return fetch(url).then(function(r){ return r.json(); });
   }
 
