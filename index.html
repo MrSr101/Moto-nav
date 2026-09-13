@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
 <title>Rota Curva — Navegação de Mota</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0B0E10">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rota Curva">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -150,8 +157,8 @@
   input[type=range]::-webkit-slider-runnable-track { height: 5px; border-radius: 3px; background: var(--line); }
   input[type=range]::-moz-range-track { height: 5px; border-radius: 3px; background: var(--line); }
 
-  .radar-pin { width: 26px; height: 26px; border-radius: 50%; background: var(--danger); display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: 0 3px 8px rgba(0,0,0,.5); border: 2px solid #fff; }
-  .radar-pin-osm { background: var(--warn); }
+  .radar-pin { width: 17px; height: 17px; border-radius: 6px; background: color-mix(in srgb, var(--danger) 78%, transparent); display: flex; align-items: center; justify-content: center; font-size: 9px; box-shadow: 0 1px 4px rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,0.5); opacity: 0.85; }
+  .radar-pin-osm { background: color-mix(in srgb, var(--warn) 78%, transparent); }
 
   .toast { position: absolute; left: 50%; bottom: 110px; transform: translate(-50%, 0); z-index: 50; background: var(--surface); border: 1px solid var(--line); color: var(--text); padding: 10px 16px; border-radius: 12px; font-size: 13px; box-shadow: 0 8px 22px var(--shadow); opacity: 0; transition: opacity .25s ease; pointer-events: none; max-width: 86vw; text-align: center; }
   .toast.show { opacity: 1; }
@@ -279,6 +286,12 @@
   </div>
 
   <div class="field-group">
+    <label class="field-label">Rotação do mapa</label>
+    <div class="seg" id="headingup-seg"><button data-v="on">Sempre à frente</button><button data-v="off">Norte para cima</button></div>
+    <div class="note" style="margin-top:10px">Com "Sempre à frente", o mapa roda consoante a direção da mota — a seta fica sempre a apontar para a frente, como na maioria das apps de navegação.</div>
+  </div>
+
+  <div class="field-group">
     <label class="field-label">Assistente de voz</label>
     <div class="seg" id="voice-seg"><button data-v="on">Ligado</button><button data-v="off">Desligado</button></div>
     <select id="voice-select" style="width:100%;margin-top:10px;padding:12px;border-radius:10px;background:var(--surface-2);color:var(--text);border:1px solid var(--line);font-family:inherit;font-size:13px;">
@@ -296,11 +309,11 @@
   <div class="field-group">
     <label class="field-label">Cor das curvas (grau de fecho)</label>
     <div class="curve-legend">
-      <div style="background:hsl(220,85%,52%)"></div><div style="background:hsl(165,85%,45%)"></div>
-      <div style="background:hsl(90,85%,45%)"></div><div style="background:hsl(45,90%,52%)"></div>
-      <div style="background:hsl(0,85%,55%)"></div>
+      <div style="background:hsl(212,85%,50%)"></div><div style="background:hsl(178,85%,50%)"></div>
+      <div style="background:hsl(48,85%,50%)"></div><div style="background:hsl(24,85%,50%)"></div>
+      <div style="background:hsl(0,85%,50%);box-shadow:inset 0 0 0 2px #000"></div>
     </div>
-    <div class="curve-legend-labels"><span>Suave</span><span>Fechada</span></div>
+    <div class="curve-legend-labels"><span>Ligeira</span><span>Fechada</span></div>
   </div>
 
   <div class="field-group">
@@ -323,13 +336,23 @@
 
   <div class="field-group">
     <label class="field-label">Radares</label>
-    <div class="note">Toca sem soltar (ou clique com o botão direito) num ponto do mapa para adicionar ou remover um radar. Ficam guardados só neste telemóvel — a app avisa por voz ao aproximares-te (±350m).</div>
+    <div class="note">Toca sem soltar (ou clique com o botão direito) num ponto do mapa para adicionar ou remover um radar. Ficam guardados só neste telemóvel — a app avisa por voz ao aproximares-te (±200m).</div>
+  </div>
+
+  <div class="field-group">
+    <label class="field-label">Importar rota</label>
+    <button class="btn-secondary" id="btn-import-gmaps">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+      Importar link do Google Maps
+    </button>
+    <div class="note" style="margin-top:10px">Não consigo copiar o trajeto exato da Google (não é um dado público) — mas extraio a origem e o destino do link e calculo uma rota equivalente com o nosso motor, já com análise de curvas.</div>
   </div>
 
   <div class="note">Fase 3: tipos de rota, rota circular e radares manuais adicionados. Off-road/avaliação de piso e valores de portagem exigem um motor de rotas pago — por agora ficam como preferências guardadas.</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://unpkg.com/leaflet-rotate/dist/leaflet-rotate-src.js" onerror="window.__rotateFailed=true"></script>
 <script>
   function showErr(msg){
     var b = document.getElementById('err-banner');
@@ -343,7 +366,7 @@
   "use strict";
 
   var STORE_KEY = "motonav_settings_v1";
-  var settings = Object.assign({ theme: "dark", pinColor: "#47D9C4", pinSize: 40, voiceOn: true, tollPref: "without", surfacePref: "any", voiceURI: "auto", leanOn: false }, JSON.parse(localStorage.getItem(STORE_KEY) || "{}"));
+  var settings = Object.assign({ theme: "dark", pinColor: "#47D9C4", pinSize: 40, voiceOn: true, tollPref: "without", surfacePref: "any", voiceURI: "auto", leanOn: false, headingUp: true }, JSON.parse(localStorage.getItem(STORE_KEY) || "{}"));
   function saveSettings(){ localStorage.setItem(STORE_KEY, JSON.stringify(settings)); }
 
   function applyTheme(){
@@ -353,9 +376,11 @@
   }
   function applyVoiceSeg(){ document.getElementById("voice-seg").querySelectorAll("button").forEach(function(b){ b.classList.toggle("active", (b.dataset.v === "on") === settings.voiceOn); }); }
   function applyTollSeg(){ document.getElementById("toll-seg").querySelectorAll("button").forEach(function(b){ b.classList.toggle("active", b.dataset.v === settings.tollPref); }); }
+  function applyHeadingUpSeg(){ document.getElementById("headingup-seg").querySelectorAll("button").forEach(function(b){ b.classList.toggle("active", (b.dataset.v==="on")===settings.headingUp); }); }
   function applySurfaceSeg(){ document.getElementById("surface-seg").querySelectorAll("button").forEach(function(b){ b.classList.toggle("active", b.dataset.v === settings.surfacePref); }); }
 
-  var map = L.map("map", { zoomControl: false, attributionControl: false, preferCanvas: true }).setView([38.7223, -9.1393], 15);
+  var map = L.map("map", { zoomControl: false, attributionControl: false, preferCanvas: true, rotate: true, rotateControl: false, touchRotate: false, shiftKeyRotate: false }).setView([38.7223, -9.1393], 15);
+  var mapCanRotate = !window.__rotateFailed && typeof map.setBearing === "function";
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, subdomains: "abc", updateWhenZooming: false, keepBuffer: 4, detectRetina: false }).addTo(map);
 
   var followMode = true, followResumeTimer = null;
@@ -403,9 +428,21 @@
     var lon2=lon1+Math.atan2(Math.sin(brg)*Math.sin(d)*Math.cos(lat1), Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
     return [toDeg(lat2), toDeg(lon2)];
   }
+  // bandas de severidade — usadas tanto na cor como na voz, para ficarem sempre coerentes
+  var CURVE_BANDS = [
+    { max: 38,  label: "ligeira",        hue: 212 }, // azul
+    { max: 58,  label: "moderada",       hue: 178 }, // ciano
+    { max: 82,  label: "apertada",       hue: 48  }, // amarelo
+    { max: 112, label: "muito apertada", hue: 24  }, // laranja
+    { max: Infinity, label: "fechada",   hue: 0   }  // vermelho — destaca-se ainda mais com contorno preto
+  ];
+  function curveBand(angle){
+    for (var i=0;i<CURVE_BANDS.length;i++) if (angle < CURVE_BANDS[i].max) return CURVE_BANDS[i];
+    return CURVE_BANDS[CURVE_BANDS.length-1];
+  }
   function angleToColor(angle){
-    var t = Math.min(1, Math.max(0, (angle-12)/125));
-    return "hsl(" + Math.round(220 - t*220) + ",85%,50%)";
+    var b = curveBand(angle);
+    return "hsl(" + b.hue + ",85%,50%)";
   }
 
   var toastTimer = null;
@@ -423,6 +460,7 @@
     routeLayers.forEach(function(l){ map.removeLayer(l); }); routeLayers = [];
     routeCoords = null; routeMeta = null; curveEvents = []; announced = {}; routeInfo = null;
     routeSegLayers = []; routePassedIdx = 0;
+    activeDest = null; activeLabel = null; activeMode = null; rerouting = false; offRouteStrikes = 0;
     document.getElementById("search-chip").classList.remove("has-route");
     document.getElementById("search-label").textContent = "Para onde vamos?";
     document.getElementById("search-sub").textContent = "";
@@ -432,12 +470,29 @@
   }
   document.getElementById("chip-x").addEventListener("click", function(e){ e.stopPropagation(); clearRoute(); });
 
-  function buildCurveEvents(coords){
+  function buildCurveEvents(coords, rawRoute){
     var n = coords.length;
     var cum = new Array(n).fill(0);
     for (var k=1;k<n;k++) cum[k]=cum[k-1]+haversine(coords[k-1],coords[k]);
     var total = cum[n-1];
     var W = 20; // metros — janela de suavização para captar a curvatura real, não o ruído vértice-a-vértice
+
+    // localizações de rotundas (a OSRM identifica-as explicitamente) — para não as tratar como curvas
+    var roundaboutDists = [];
+    if (rawRoute && rawRoute.legs){
+      rawRoute.legs.forEach(function(leg){
+        (leg.steps||[]).forEach(function(step){
+          var t = step.maneuver && step.maneuver.type;
+          if (t === "roundabout" || t === "rotary" || t === "roundabout turn"){
+            var loc = [step.maneuver.location[1], step.maneuver.location[0]]; // [lat,lon]
+            var bestI = 0, bestD = Infinity;
+            for (var j=0;j<n;j+=Math.max(1,Math.floor(n/300))){ var dd=haversine(loc,coords[j]); if (dd<bestD){ bestD=dd; bestI=j; } }
+            roundaboutDists.push(cum[bestI]);
+          }
+        });
+      });
+    }
+    function nearRoundabout(d){ return roundaboutDists.some(function(rd){ return Math.abs(rd-d) < 55; }); }
 
     var bIdx = 0;
     function backPoint(i){
@@ -458,13 +513,14 @@
 
     var vAngle = new Array(n).fill(0), vSigned = new Array(n).fill(0);
     for (var i=0;i<n;i++){
+      if (nearRoundabout(cum[i])) continue; // deixa o ângulo a 0 — não conta como curva
       var p0 = backPoint(i), p2 = fwdPoint(i);
       var b1 = bearingOf(p0, coords[i]), b2 = bearingOf(coords[i], p2);
       var diff = ((b2-b1+540)%360)-180;
       vSigned[i] = diff; vAngle[i] = Math.abs(diff);
     }
 
-    var ON = 10, GAP_BRIDGE = 15, runs = [], score = 0;
+    var ON = 22, GAP_BRIDGE = 15, runs = [], score = 0;
     i = 0;
     while (i<n){
       if (vAngle[i] >= ON){
@@ -489,10 +545,16 @@
     var outline = L.polyline(latlngs, { color: "#08110F", weight: 9, opacity: 0.55, lineCap: "round", lineJoin: "round" }).addTo(map);
     routeLayers.push(outline);
     var segColor = new Array(Math.max(0, latlngs.length-1)).fill("#3FB8A8");
+    var segExtreme = new Array(Math.max(0, latlngs.length-1)).fill(false);
     routeMeta.events.forEach(function(run){
       var c = angleToColor(run.angle);
-      for (var k=Math.max(0,run.startIdx-1); k<Math.min(segColor.length, run.endIdx+1); k++) segColor[k] = c;
+      var extreme = curveBand(run.angle).label === "fechada";
+      for (var k=Math.max(0,run.startIdx-1); k<Math.min(segColor.length, run.endIdx+1); k++){ segColor[k] = c; segExtreme[k] = extreme; }
     });
+    // contorno preto extra por baixo das curvas mais fechadas, para se destacarem mesmo a olhar rápido
+    for (var i=0;i<latlngs.length-1;i++){
+      if (segExtreme[i]) routeLayers.push(L.polyline([latlngs[i], latlngs[i+1]], { color: "#000", weight: 8.5, opacity: 0.9, lineCap: "round" }).addTo(map));
+    }
     for (var i=0;i<latlngs.length-1;i++){
       var seg = L.polyline([latlngs[i], latlngs[i+1]], { color: segColor[i], weight: 5.5, opacity: 0.95, lineCap: "round" }).addTo(map);
       routeLayers.push(seg);
@@ -557,9 +619,8 @@
   }
   document.getElementById("voice-select").addEventListener("change", function(e){ settings.voiceURI = e.target.value; saveSettings(); });
   function curvePhrase(ev){
-    var dir = ev.sign>0 ? "à direita" : "à esquerda";
-    var sever = ev.angle>=105 ? "muito fechada" : ev.angle>=75 ? "apertada" : ev.angle>=45 ? "moderada" : "ligeira";
-    return "Curva " + sever + " " + dir + ".";
+    var dir = ev.sign>0 ? "direita" : "esquerda";
+    return curveBand(ev.angle).label + " à " + dir + ".";
   }
   function fmtDist(m){ return m>=1000 ? (m/1000).toFixed(1)+" km" : Math.round(m)+" m"; }
   function fmtDur(s){ var h=Math.floor(s/3600), mnt=Math.round((s%3600)/60); return h>0 ? (h+"h "+mnt+"min") : (mnt+" min"); }
@@ -583,14 +644,32 @@
     return best;
   }
 
+  var activeDest = null, activeLabel = null, activeMode = null, rerouting = false, offRouteStrikes = 0;
   function checkCurveAnnouncements(latlng){
     if (!routeCoords) return;
     var idx = findNearestIndex(latlng);
     var distAlongNow = routeMeta.cum[idx];
+    var offRouteDist = haversine(latlng, routeCoords[idx]);
+
+    // se te afastares consistentemente da rota (não só ruído de GPS), recalcula a partir de onde estás
+    if (activeDest && !rerouting && offRouteDist > 70){
+      offRouteStrikes++;
+      if (offRouteStrikes >= 3){
+        rerouting = true; offRouteStrikes = 0;
+        toast("Fora da rota — a recalcular…", 4000);
+        computeRoute(latlng, activeDest, activeLabel, activeMode);
+        return;
+      }
+    } else {
+      offRouteStrikes = 0;
+    }
+
+    // avisa mais cedo a velocidades mais altas (~7 segundos de antecedência), com um mínimo de 150m
+    var warnDist = Math.max(150, (lastSpeedKmh||0)/3.6 * 7);
     curveEvents.forEach(function(ev, i){
       if (announced[i]) return;
       var ahead = ev.distAlong - distAlongNow;
-      if (ahead>0 && ahead<120){ announced[i]=true; speak(curvePhrase(ev)); }
+      if (ahead>0 && ahead<warnDist){ announced[i]=true; speak(curvePhrase(ev)); }
     });
     dimPassedRoute(idx);
     updateRouteHud(distAlongNow);
@@ -603,8 +682,10 @@
     var tolledKm = 0, hasAny = false;
     route.legs.forEach(function(leg){
       (leg.steps||[]).forEach(function(step){
-        // a OSRM nem sempre põe o número da via no "name" — o "ref" (quando existe) é mais fiável
-        var text = ((step.ref || "") + " " + (step.name || "") + " " + (step.destinations || "")).trim();
+        // usa só "ref"/"name" (a via em que estás) — "destinations" é sinalização para onde a via vai dar,
+        // não classifica a via atual, e estava a causar falsos positivos
+        var text = ((step.ref || "") + " " + (step.name || "")).trim();
+        if (!text) return;
         if (TOLL_ROAD.test(text) && !FREE.test(text)){ tolledKm += (step.distance||0)/1000; hasAny = true; }
       });
     });
@@ -612,10 +693,10 @@
     return { amount: hasAny ? tolledKm*RATE : 0, km: tolledKm };
   }
 
-  function finishRoute(coords, info, label, sub, spokenExtra, tollInfo){
+  function finishRoute(coords, info, label, sub, spokenExtra, tollInfo, rawRoute){
     routeInfo = info;
     routeCoords = coords;
-    routeMeta = buildCurveEvents(routeCoords);
+    routeMeta = buildCurveEvents(routeCoords, rawRoute);
     curveEvents = routeMeta.events; announced = {};
     drawRoute(routeCoords);
     document.getElementById("search-chip").classList.add("has-route");
@@ -627,6 +708,7 @@
     if (lastLatLng) updateRouteHud(routeMeta.cum[findNearestIndex(lastLatLng)]);
     var tollSpoken = tollInfo && tollInfo.amount > 0 ? (" Portagem estimada de cerca de " + tollInfo.amount.toFixed(2).replace(".", " vírgula ") + " euros.") : "";
     speak((spokenExtra ? spokenExtra + " " : "") + "Rota calculada. " + fmtDist(info.distance) + ", tempo estimado " + fmtDur(info.duration) + "." + tollSpoken);
+    rerouting = false; offRouteStrikes = 0;
   }
 
   function fetchRouteRaw(coordsList){
@@ -642,7 +724,7 @@
       fetchRouteRaw([origin, dest]).then(function(r){
         if (!r){ toast("Não foi possível calcular a rota."); clearRoute(); return; }
         var coords = r.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
-        finishRoute(coords, { distance: r.distance, duration: r.duration }, label, fmtDist(r.distance) + " · " + fmtDur(r.duration), "", estimateToll(r));
+        finishRoute(coords, { distance: r.distance, duration: r.duration }, label, fmtDist(r.distance) + " · " + fmtDur(r.duration), "", estimateToll(r), r);
       }).catch(function(){ toast("Erro ao calcular a rota. Verifica a ligação à internet."); document.getElementById("search-label").textContent = "Para onde vamos?"; });
       return;
     }
@@ -681,7 +763,7 @@
           ? "Rota mais sinuosa encontrada, com mais " + extraKm + " km do que a direta."
           : "Não encontrei um trajeto claramente mais sinuoso perto daqui — a mostrar a rota mais direta.";
         if (!improved) toast(extra);
-        finishRoute(best.coords, { distance: best.route.distance, duration: best.route.duration }, label, fmtDist(best.route.distance) + " · " + fmtDur(best.route.duration), extra, estimateToll(best.route));
+        finishRoute(best.coords, { distance: best.route.distance, duration: best.route.duration }, label, fmtDist(best.route.distance) + " · " + fmtDur(best.route.duration), extra, estimateToll(best.route), best.route);
       });
     }).catch(function(){ toast("Erro ao calcular a rota. Verifica a ligação à internet."); document.getElementById("search-label").textContent = "Para onde vamos?"; });
   }
@@ -695,7 +777,7 @@
       if (!data.trips || !data.trips.length){ toast("Não foi possível gerar o percurso circular."); clearRoute(); return; }
       var trip = data.trips[0];
       var coords = trip.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
-      finishRoute(coords, { distance: trip.distance, duration: trip.duration }, "Percurso circular", fmtDist(trip.distance) + " · " + fmtDur(trip.duration), "Percurso circular gerado.", estimateToll(trip));
+      finishRoute(coords, { distance: trip.distance, duration: trip.duration }, "Percurso circular", fmtDist(trip.distance) + " · " + fmtDur(trip.duration), "Percurso circular gerado.", estimateToll(trip), trip);
     }).catch(function(){ toast("Erro ao gerar o percurso. Verifica a ligação à internet."); document.getElementById("search-label").textContent = "Para onde vamos?"; });
   }
 
@@ -795,6 +877,39 @@
     var url = "https://nominatim.openstreetmap.org/search?format=jsonv2&q=" + encodeURIComponent(q) + "&limit=7&addressdetails=1&lat=" + c.lat + "&lon=" + c.lng;
     return fetch(url).then(function(r){ return r.json(); });
   }
+
+  /* ---------- Importar rota do Google Maps ---------- */
+  function geocodeOne(q){
+    return searchFreeText(q).then(function(items){
+      return (items && items.length) ? { latlng: [parseFloat(items[0].lat), parseFloat(items[0].lon)], label: items[0].name || items[0].display_name.split(",")[0] } : null;
+    });
+  }
+  function expandIfShortLink(url){
+    if (!/goo\.gl|maps\.app\.goo\.gl/.test(url)) return Promise.resolve(url);
+    return fetch(url, { redirect: "follow" }).then(function(r){ return r.url || url; }).catch(function(){ return url; });
+  }
+  document.getElementById("btn-import-gmaps").addEventListener("click", function(){
+    var link = window.prompt("Cola aqui o link do Google Maps (com origem e destino):", "");
+    if (!link) return;
+    toast("A importar rota…", 5000);
+    expandIfShortLink(link.trim()).then(function(full){
+      var m = full.match(/\/maps\/dir\/([^\/@]+)\/([^\/@]+)\//);
+      if (!m){
+        toast("Não encontrei origem e destino nesse link. Confirma que é um link de \"Direções\" (com dois locais), não só um ponto.", 7000);
+        return;
+      }
+      var originText = decodeURIComponent(m[1].replace(/\+/g, " "));
+      var destText = decodeURIComponent(m[2].replace(/\+/g, " "));
+      Promise.all([geocodeOne(originText), geocodeOne(destText)]).then(function(res){
+        var o = res[0], d = res[1];
+        if (!o || !d){ toast("Não consegui localizar um dos pontos (\"" + (o?destText:originText) + "\") — tenta um nome mais específico."); return; }
+        closeDrawer();
+        activeDest = d.latlng; activeLabel = d.label; activeMode = "fast";
+        computeRoute(o.latlng, d.latlng, d.label, "fast");
+        toast("Rota importada: " + o.label + " → " + d.label, 5000);
+      });
+    });
+  });
   function searchNearbyCategory(q){
     var c = map.getCenter(), d = 0.18;
     var viewbox = (c.lng-d) + "," + (c.lat+d) + "," + (c.lng+d) + "," + (c.lat-d);
@@ -838,12 +953,18 @@
     });
   });
   document.getElementById("toll-seg").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; settings.tollPref=b.dataset.v; saveSettings(); applyTollSeg(); });
+  document.getElementById("headingup-seg").addEventListener("click", function(e){
+    var b=e.target.closest("button"); if(!b) return;
+    settings.headingUp = b.dataset.v==="on"; saveSettings(); applyHeadingUpSeg();
+    if (!settings.headingUp && mapCanRotate) map.setBearing(0);
+  });
   document.getElementById("surface-seg").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; settings.surfacePref=b.dataset.v; saveSettings(); applySurfaceSeg(); });
   document.getElementById("btn-confirm-route").addEventListener("click", function(){
     if (!pendingDest) return;
+    if (!lastLatLng){ toast("Localização desconhecida — ainda não tenho a tua posição por GPS, não posso calcular a rota a partir daqui."); return; }
     closeRouteSheet();
-    var origin = lastLatLng || [map.getCenter().lat, map.getCenter().lng];
-    computeRoute(origin, pendingDest.latlng, pendingDest.label, chosenMode);
+    activeDest = pendingDest.latlng; activeLabel = pendingDest.label; activeMode = chosenMode;
+    computeRoute(lastLatLng, pendingDest.latlng, pendingDest.label, chosenMode);
   });
 
   /* ---------- Loop sheet ---------- */
@@ -873,7 +994,7 @@
   var osmRadars = []; // radares carregados do OpenStreetMap (comunidade)
   var radarMarkers = {}, osmRadarMarkers = {}, radarWarned = {};
   function saveRadars(){ localStorage.setItem(RADAR_KEY, JSON.stringify(radars)); }
-  function radarIcon(osm){ return L.divIcon({ className: "", html: '<div class="radar-pin' + (osm?' radar-pin-osm':'') + '">📷</div>', iconSize: [26,26], iconAnchor: [13,13] }); }
+  function radarIcon(osm){ return L.divIcon({ className: "", html: '<div class="radar-pin' + (osm?' radar-pin-osm':'') + '"></div>', iconSize: [17,17], iconAnchor: [8,8] }); }
   function renderRadars(){
     Object.keys(radarMarkers).forEach(function(id){ map.removeLayer(radarMarkers[id]); }); radarMarkers = {};
     radars.forEach(function(r){
@@ -953,6 +1074,7 @@
 
   /* ---------- GPS ---------- */
   var speedVal = document.getElementById("speed-val");
+  var lastSpeedKmh = 0;
   var lastFixAt = 0;
   function onPosition(pos){
     var c = pos.coords, latlng = [c.latitude, c.longitude];
@@ -960,9 +1082,17 @@
     lastFixAt = Date.now();
     ensureMarker(latlng);
     accuracyCircle.setRadius(Math.min(300, Math.max(8, c.accuracy || 15)));
-    if (typeof c.heading === "number" && !isNaN(c.heading)) rotateMarker(c.heading);
+    if (typeof c.heading === "number" && !isNaN(c.heading)){
+      if (settings.headingUp && mapCanRotate){
+        map.setBearing(c.heading);
+        rotateMarker(0); // o mapa é que roda — a seta fica sempre a apontar para cima (para a frente)
+      } else {
+        rotateMarker(c.heading);
+      }
+    }
     var kmh = (typeof c.speed === "number" && !isNaN(c.speed) && c.speed>=0) ? Math.round(c.speed*3.6) : null;
     speedVal.textContent = kmh===null ? "--" : kmh;
+    lastSpeedKmh = kmh || 0;
     var dot = document.getElementById("gps-dot"); if (dot) dot.classList.add("ok");
     if (!routeCoords){
       var st = document.getElementById("status-text");
@@ -1001,11 +1131,14 @@
 
   /* ---------- Lean angle (experimental) ---------- */
   var leanOffset = parseFloat(localStorage.getItem("motonav_lean_offset")||"0");
-  var leanActive = false, calibrateNext = false;
+  var leanActive = false, calibrateNext = false, leanSmoothed = null;
   function applyLeanSeg(){ document.getElementById("lean-seg").querySelectorAll("button").forEach(function(b){ b.classList.toggle("active", (b.dataset.v==="on")===settings.leanOn); }); }
   function updateLeanGauge(rawDeg){
-    if (calibrateNext){ leanOffset = rawDeg; localStorage.setItem("motonav_lean_offset", String(leanOffset)); calibrateNext = false; }
-    var deg = Math.max(-70, Math.min(70, rawDeg - leanOffset));
+    // filtro passa-baixo — a vibração do motor/estrada tem muito ruído de alta frequência;
+    // a inclinação real muda devagar (fração de segundo), por isso suavizamos bastante
+    leanSmoothed = (leanSmoothed === null) ? rawDeg : (leanSmoothed*0.88 + rawDeg*0.12);
+    if (calibrateNext){ leanOffset = leanSmoothed; localStorage.setItem("motonav_lean_offset", String(leanOffset)); calibrateNext = false; }
+    var deg = Math.max(-70, Math.min(70, leanSmoothed - leanOffset));
     document.getElementById("lean-deg").textContent = Math.round(Math.abs(deg)) + "°";
     var rad = (deg/70) * (Math.PI/2.3);
     var x2 = 36 - 26*Math.sin(rad), y2 = 38 - 26*Math.cos(rad);
@@ -1039,7 +1172,7 @@
     updateLeanGauge(raw);
   }
   function startLean(){
-    leanEventReceived = false; leanUsingMotion = false;
+    leanEventReceived = false; leanUsingMotion = false; leanSmoothed = null;
     window.addEventListener("deviceorientation", onOrientation, true);
     window.addEventListener("devicemotion", onMotionContinuous, true);
     leanActive = true;
@@ -1111,16 +1244,31 @@
   function highlightSwatch(){ document.querySelectorAll("#pin-colors .swatch").forEach(function(s){ s.classList.toggle("active", s.dataset.c && s.dataset.c.toLowerCase()===settings.pinColor.toLowerCase()); }); }
   document.getElementById("pin-size").addEventListener("input", function(e){ settings.pinSize=parseInt(e.target.value,10); saveSettings(); refreshMarkerStyle(); });
 
-  applyTheme(); applyVoiceSeg(); applyTollSeg(); applySurfaceSeg();
+  applyTheme(); applyVoiceSeg(); applyTollSeg(); applySurfaceSeg(); applyHeadingUpSeg();
   document.getElementById("pin-size").value = settings.pinSize;
   document.getElementById("pin-size-preview").innerHTML = bikeSvg(settings.pinColor, 48);
   highlightSwatch();
   window.matchMedia("(prefers-color-scheme: light)").addEventListener("change", function(){ if (settings.theme==="auto") applyTheme(); });
   window.addEventListener("resize", function(){ map.invalidateSize(); });
+
+  /* ---------- Manter o ecrã ligado durante a navegação ---------- */
+  var wakeLock = null;
+  function requestWakeLock(){
+    if (!("wakeLock" in navigator)) return;
+    navigator.wakeLock.request("screen").then(function(wl){ wakeLock = wl; }).catch(function(){ /* pode falhar se a página não estiver visível — sem problema */ });
+  }
+  document.addEventListener("visibilitychange", function(){ if (document.visibilityState === "visible") requestWakeLock(); });
+  requestWakeLock();
   window.addEventListener("orientationchange", function(){ setTimeout(function(){ map.invalidateSize(); }, 300); });
 
   })();
   } catch (e) { showErr(e && e.message ? e.message : String(e)); }
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("sw.js").catch(function(){ /* opcional — não bloqueia a app */ });
+    });
+  }
 </script>
 </body>
 </html>
