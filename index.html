@@ -397,7 +397,18 @@
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, subdomains: "abc", updateWhenZooming: false, keepBuffer: 4, detectRetina: false }).addTo(map);
 
   var followMode = true, followResumeTimer = null;
-  map.on("dragstart", function(){ followMode = false; });
+  // Distingue gestos do utilizador (arrastar, fazer zoom) de movimentos que a própria app faz
+  // (seguir o GPS, rodar consoante a direção) — só os primeiros devem desligar o "seguir-me".
+  var suppressFollowBreak = 0;
+  function programmaticMapCall(fn){
+    suppressFollowBreak++;
+    fn();
+    clearTimeout(programmaticMapCall._t);
+    programmaticMapCall._t = setTimeout(function(){ suppressFollowBreak = 0; }, 700);
+  }
+  map.on("dragstart zoomstart", function(){ if (suppressFollowBreak <= 0) followMode = false; });
+  function followLatLng(latlng, zoom){ programmaticMapCall(function(){ map.setView(latlng, zoom, { animate: true }); }); }
+  function setMapBearing(deg){ if (mapCanRotate) programmaticMapCall(function(){ map.setBearing(deg); }); }
 
   function bikeSvg(color, size){
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" style="display:block;filter:drop-shadow(0 3px 6px rgba(0,0,0,.5))">' +
@@ -443,11 +454,11 @@
   }
   // bandas de severidade — usadas tanto na cor como na voz, para ficarem sempre coerentes
   var CURVE_BANDS = [
-    { max: 38,  label: "ligeira",        hue: 212 }, // azul
-    { max: 58,  label: "moderada",       hue: 178 }, // ciano
-    { max: 82,  label: "apertada",       hue: 48  }, // amarelo
-    { max: 112, label: "muito apertada", hue: 24  }, // laranja
-    { max: Infinity, label: "fechada",   hue: 0   }  // vermelho — destaca-se ainda mais com contorno preto
+    { max: 20,  label: "leve",             hue: 212 }, // azul
+    { max: 50,  label: "moderada",         hue: 178 }, // ciano
+    { max: 90,  label: "acentuada",        hue: 48  }, // amarelo
+    { max: 160, label: "muito acentuada",  hue: 24  }, // laranja
+    { max: Infinity, label: "em cotovelo", hue: 0   }  // vermelho — destaca-se ainda mais com contorno preto
   ];
   function curveBand(angle){
     for (var i=0;i<CURVE_BANDS.length;i++) if (angle < CURVE_BANDS[i].max) return CURVE_BANDS[i];
@@ -479,7 +490,7 @@
     document.getElementById("search-sub").textContent = "";
     document.getElementById("status-pod").innerHTML = '<div class="gps-dot ok" id="gps-dot"></div><div class="status-text" id="status-text">GPS ativo</div>';
     followMode = true;
-    if (marker) map.setView(marker.getLatLng(), Math.max(map.getZoom(), 16), { animate: true });
+    if (marker) followLatLng(marker.getLatLng(), Math.max(map.getZoom(), 16));
   }
   document.getElementById("chip-x").addEventListener("click", function(e){ e.stopPropagation(); clearRoute(); });
 
@@ -533,7 +544,7 @@
       vSigned[i] = diff; vAngle[i] = Math.abs(diff);
     }
 
-    var ON = 22, GAP_BRIDGE = 15, runs = [], score = 0;
+    var ON = 15, GAP_BRIDGE = 15, runs = [], score = 0;
     i = 0;
     while (i<n){
       if (vAngle[i] >= ON){
@@ -573,7 +584,7 @@
       routeLayers.push(seg);
       routeSegLayers.push(seg);
     }
-    map.fitBounds(L.polyline(latlngs).getBounds(), { padding: [60,60] });
+    programmaticMapCall(function(){ map.fitBounds(L.polyline(latlngs).getBounds(), { padding: [60,60] }); });
     followMode = false;
     clearTimeout(followResumeTimer);
     followResumeTimer = setTimeout(function(){ followMode = true; }, 3500); // depois de mostrar a rota toda, volta a seguir-te automaticamente
@@ -690,16 +701,19 @@
 
   function estimateToll(route){
     if (!route || !route.legs) return null;
-    var FREE = /\bA\s?(4|13|13-1|22|23|24|25|28)\b/i; // ex-SCUT, hoje gratuitas (aproximação)
-    var TOLL_ROAD = /\bA\s?\d{1,2}\b/i; // refs tipo "A1", "A2"...
+    var FREE = /^A\s?(4|13|13-1|22|23|24|25|28)$/i; // ex-SCUT, hoje gratuitas (aproximação)
+    var TOLL_ROAD = /^A\s?\d{1,2}$/i; // ref tipo "A1", "A2"... (correspondência exata, não "contém")
     var tolledKm = 0, hasAny = false;
     route.legs.forEach(function(leg){
       (leg.steps||[]).forEach(function(step){
-        // usa só "ref"/"name" (a via em que estás) — "destinations" é sinalização para onde a via vai dar,
-        // não classifica a via atual, e estava a causar falsos positivos
-        var text = ((step.ref || "") + " " + (step.name || "")).trim();
-        if (!text) return;
-        if (TOLL_ROAD.test(text) && !FREE.test(text)){ tolledKm += (step.distance||0)/1000; hasAny = true; }
+        // só usa "ref" — é o campo dedicado ao número oficial da via (ex. "A1"); "name" é texto livre
+        // (nomes de ruas, sinalização) e estava a dar falsos positivos (ex. uma rua chamada "Rua A1")
+        var refRaw = step.ref || "";
+        if (!refRaw) return;
+        refRaw.split(/[;,\/]/).forEach(function(tok){
+          tok = tok.trim();
+          if (TOLL_ROAD.test(tok) && !FREE.test(tok)){ tolledKm += (step.distance||0)/1000; hasAny = true; }
+        });
       });
     });
     var RATE = 0.09; // €/km aproximado (Classe 1 — inclui motas), média Brisa 2026
@@ -798,10 +812,10 @@
       var totalKm = baseline.distance / 1000;
 
       var viaPromises = [];
-      // "sem desvios": ofertas mínimas, cap curto — só troca de rua se for mesmo ao lado do caminho direto
-      // "explorar": ofertas maiores, cap mais folgado — pode ir mais longe atrás de curvas
+      // "sem desvios": limite PROPORCIONAL — só 5% de distância extra (5m por cada 100m), por pedido explícito
+      // "explorar": sem limite nenhum — prioriza só sinuosidade, o desvio que for preciso
       var offsets = tight ? [0.8, 1.6] : [1.5, 3, 5];
-      var MAX_EXTRA_KM = tight ? 3 : 15;
+      var maxExtraMeters = tight ? baseline.distance * 0.05 : Infinity;
       if (totalKm >= 1.5){
         var brg = bearingOf(origin, dest);
         var mid = [(origin[0]+dest[0])/2, (origin[1]+dest[1])/2];
@@ -809,7 +823,7 @@
           [90, -90].forEach(function(side){
             var via = destPoint(mid, offsetKm, brg+side);
             viaPromises.push(fetchRouteRaw([origin, via, dest]).then(function(r){
-              if (!r || (r.distance - baseline.distance) > MAX_EXTRA_KM*1000) return null;
+              if (!r || (r.distance - baseline.distance) > maxExtraMeters) return null;
               var coords = r.geometry.coordinates.map(function(c){ return [c[1], c[0]]; });
               return { route: r, coords: coords, curveScore: buildCurveEvents(coords).curveScore };
             }));
@@ -1064,7 +1078,7 @@
   document.getElementById("headingup-seg").addEventListener("click", function(e){
     var b=e.target.closest("button"); if(!b) return;
     settings.headingUp = b.dataset.v==="on"; saveSettings(); applyHeadingUpSeg();
-    if (!settings.headingUp && mapCanRotate) map.setBearing(0);
+    if (!settings.headingUp && mapCanRotate) setMapBearing(0);
   });
   document.getElementById("surface-seg").addEventListener("click", function(e){ var b=e.target.closest("button"); if(!b) return; settings.surfacePref=b.dataset.v; saveSettings(); applySurfaceSeg(); });
   document.getElementById("btn-confirm-route").addEventListener("click", function(){
@@ -1190,13 +1204,11 @@
     lastFixAt = Date.now();
     ensureMarker(latlng);
     accuracyCircle.setRadius(Math.min(300, Math.max(8, c.accuracy || 15)));
-    if (typeof c.heading === "number" && !isNaN(c.heading)){
-      if (settings.headingUp && mapCanRotate){
-        map.setBearing(c.heading);
-        rotateMarker(0); // o mapa é que roda — a seta fica sempre a apontar para cima (para a frente)
-      } else {
-        rotateMarker(c.heading);
-      }
+    var hasHeading = typeof c.heading === "number" && !isNaN(c.heading);
+    var useMapRotation = hasHeading && settings.headingUp && mapCanRotate;
+    if (hasHeading){
+      if (useMapRotation) rotateMarker(0); // o mapa é que roda — a seta fica sempre a apontar para cima (para a frente)
+      else rotateMarker(c.heading);
     }
     var kmh = (typeof c.speed === "number" && !isNaN(c.speed) && c.speed>=0) ? Math.round(c.speed*3.6) : null;
     speedVal.textContent = kmh===null ? "--" : kmh;
@@ -1209,7 +1221,13 @@
       checkCurveAnnouncements(latlng);
     }
     checkRadarProximity(latlng);
-    if (followMode) map.setView(latlng, Math.max(map.getZoom(), routeCoords ? 17.5 : 16), { animate: true });
+    // centrar e rodar numa única chamada quando possível — evita o "andar de lado" de duas animações separadas a dessincronizar
+    // só mexe no mapa quando estás a seguir a posição — se saíste do modo "seguir" (a olhar/escolher no mapa), não mexemos em nada
+    if (followMode){
+      var zoom = Math.max(map.getZoom(), routeCoords ? 17.5 : 16);
+      if (useMapRotation) programmaticMapCall(function(){ map.setView(latlng, zoom, { animate: true, bearing: c.heading }); });
+      else followLatLng(latlng, zoom);
+    }
   }
   setInterval(function(){
     if (!lastFixAt || routeCoords) return;
@@ -1234,7 +1252,7 @@
 
   document.getElementById("btn-recenter").addEventListener("click", function(){
     followMode = true;
-    if (marker) map.setView(marker.getLatLng(), Math.max(map.getZoom(), 16), { animate: true });
+    if (marker) followLatLng(marker.getLatLng(), Math.max(map.getZoom(), 16));
   });
 
   /* ---------- Lean angle (experimental) ---------- */
